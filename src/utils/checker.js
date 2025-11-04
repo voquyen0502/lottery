@@ -30,15 +30,21 @@ const STATION_MULTIPLIERS = {
 
 // Helper function to check if a number matches in lottery results
 function checkNumberMatch(num, lotteryResults, isMultiStation) {
-  const numStr = String(num);
+  const numStr = String(num).trim();
   
-  if (numStr.length === 2) {
+  // Normalize: pad single digit with 0
+  let normalizedNum = numStr;
+  if (numStr.length === 1) {
+    normalizedNum = '0' + numStr;
+  }
+  
+  if (normalizedNum.length === 2) {
     // 2-digit: check last 2 digits using allEndings
     const allEndings = extractAllEndings(lotteryResults, isMultiStation);
-    return allEndings.includes(numStr.slice(-2));
-  } else if (numStr.length === 3) {
+    return allEndings.includes(normalizedNum);
+  } else if (normalizedNum.length === 3) {
     // 3-digit: check last 3 digits in full results
-    return checkThreeDigitMatch(numStr, lotteryResults, isMultiStation);
+    return checkThreeDigitMatch(normalizedNum, lotteryResults, isMultiStation);
   }
   return false;
 }
@@ -121,13 +127,18 @@ function extractAllEndingsFromData(data) {
 
 // Count how many times a number matches (for bao-lo, 7-lo, xiu-chu)
 // A number can match multiple times if it appears in different prizes
-function countMatches(num, lotteryResults, isMultiStation, prizeFilter = null) {
+// betStations: array of station names that the player bet on (e.g., ["tp-hcm", "dong-thap"])
+function countMatches(num, lotteryResults, isMultiStation, prizeFilter = null, betStations = null) {
   const numStr = String(num);
   let matchCount = 0;
 
   if (isMultiStation) {
-    Object.values(lotteryResults).forEach(stationData => {
-      matchCount += countMatchesInStation(numStr, stationData, prizeFilter);
+    // Only count matches from stations that the player bet on
+    Object.entries(lotteryResults).forEach(([stationKey, stationData]) => {
+      // If betStations is provided, only check those stations
+      if (!betStations || betStations.includes(stationKey)) {
+        matchCount += countMatchesInStation(numStr, stationData, prizeFilter);
+      }
     });
   } else {
     matchCount = countMatchesInStation(numStr, lotteryResults, prizeFilter);
@@ -178,14 +189,21 @@ function countMatchesInStation(numStr, data, prizeFilter = null) {
     if (!prizeNum) return;
     const prizeStr = String(prizeNum).trim();
     
-    if (numStr.length === 2) {
+    // Normalize numStr: pad with 0 if needed for 2-digit comparison
+    let normalizedNum = numStr;
+    if (numStr.length === 1) {
+      // Single digit like "7" should be treated as "07" for 2-digit comparison
+      normalizedNum = '0' + numStr;
+    }
+    
+    if (normalizedNum.length === 2) {
       // 2-digit: check last 2 digits
-      if (prizeStr.length >= 2 && prizeStr.slice(-2) === numStr.slice(-2)) {
+      if (prizeStr.length >= 2 && prizeStr.slice(-2) === normalizedNum) {
         count++;
       }
-    } else if (numStr.length === 3) {
+    } else if (normalizedNum.length === 3) {
       // 3-digit: check last 3 digits
-      if (prizeStr.length >= 3 && prizeStr.slice(-3) === numStr.slice(-3)) {
+      if (prizeStr.length >= 3 && prizeStr.slice(-3) === normalizedNum) {
         count++;
       }
     }
@@ -203,9 +221,21 @@ export function calculateActualBetAmount(bet) {
 
   switch (betType) {
     case 'xien': {
-      // Xiên: số con đánh × số đài × số tiền cược × 13.5
-      // VD: 2 số × 2 đài × 4000 × 13.5 = 216,000
-      return numNumbers * numStations * betAmount * 13.5;
+      // Xiên: số con đánh × số đài × số tiền cược × 13.5 × hệ_số
+      // Hệ số dựa trên bảng:
+      // 1 đài 2 con: ×1
+      // 2 đài 2 con: ×1
+      // 2 đài 3 con: ×2
+      // 2 đài 4 con: ×3
+      // 3 đài 2 con: ×2
+      // 3 đài 3 con: ×4
+      let xienMultiplier = 1;
+      if (numStations === 2 && numNumbers === 3) xienMultiplier = 2;
+      else if (numStations === 2 && numNumbers === 4) xienMultiplier = 3;
+      else if (numStations === 3 && numNumbers === 2) xienMultiplier = 2;
+      else if (numStations === 3 && numNumbers === 3) xienMultiplier = 4;
+      
+      return numNumbers * numStations * betAmount * 13.5 * xienMultiplier;
     }
 
     case 'bao-lo': {
@@ -331,8 +361,8 @@ export function checkBetList(betList, lotteryResults) {
       const matchedNumbers = [];
 
       numbers.forEach(num => {
-        // Count matches for this number
-        const matchCount = countMatches(num, lotteryResults, isMultiStation, null);
+        // Count matches for this number (only in stations the player bet on)
+        const matchCount = countMatches(num, lotteryResults, isMultiStation, null, bet.station);
         
         if (matchCount > 0) {
           matchedNumbers.push({ num, matchCount });
@@ -341,8 +371,10 @@ export function checkBetList(betList, lotteryResults) {
       });
 
       if (totalMatchCount > 0) {
-        // Get the number of digits from the first number
-        const numDigits = String(numbers[0]).length;
+        // Get the number of digits from the first number (normalized)
+        const firstNum = String(numbers[0]).trim();
+        const normalizedNum = firstNum.length === 1 ? '0' + firstNum : firstNum;
+        const numDigits = normalizedNum.length;
         const multiplier = PAYOUT_RATES['bao-lo'][numDigits] || PAYOUT_RATES['bao-lo'][2];
         
         // Payout = số con trúng (có thể trùng nhiều lần) × multiplier × tiền cược
@@ -372,7 +404,9 @@ export function checkBetList(betList, lotteryResults) {
     } else if (betType === '7-lo') {
       // 7 lô: giống bao lô nhưng chỉ nhìn vào các giải 8, 7, 6, 5, ĐB
       // Nếu cược 3 số cuối thì không có giải 8
-      const numDigits = String(numbers[0]).length;
+      const firstNum = String(numbers[0]).trim();
+      const normalizedNum = firstNum.length === 1 ? '0' + firstNum : firstNum;
+      const numDigits = normalizedNum.length;
       const prizeFilter = numDigits === 3 
         ? ['seventh', 'sixth', 'fifth', 'special']  // Không có giải 8
         : ['eighth', 'seventh', 'sixth', 'fifth', 'special'];
@@ -381,7 +415,7 @@ export function checkBetList(betList, lotteryResults) {
       const matchedNumbers = [];
 
       numbers.forEach(num => {
-        const matchCount = countMatches(num, lotteryResults, isMultiStation, prizeFilter);
+        const matchCount = countMatches(num, lotteryResults, isMultiStation, prizeFilter, bet.station);
         
         if (matchCount > 0) {
           matchedNumbers.push({ num, matchCount });
@@ -418,7 +452,9 @@ export function checkBetList(betList, lotteryResults) {
       // Xỉu chủ: giống bao lô
       // Nếu cược 2 số cuối: chỉ nhìn giải 8 và ĐB
       // Nếu cược 3 số cuối: chỉ nhìn giải 7 và ĐB
-      const numDigits = String(numbers[0]).length;
+      const firstNum = String(numbers[0]).trim();
+      const normalizedNum = firstNum.length === 1 ? '0' + firstNum : firstNum;
+      const numDigits = normalizedNum.length;
       const prizeFilter = numDigits === 2 
         ? ['eighth', 'special']  // 2 số cuối: giải 8 và ĐB
         : ['seventh', 'special']; // 3 số cuối: giải 7 và ĐB
@@ -427,7 +463,7 @@ export function checkBetList(betList, lotteryResults) {
       const matchedNumbers = [];
 
       numbers.forEach(num => {
-        const matchCount = countMatches(num, lotteryResults, isMultiStation, prizeFilter);
+        const matchCount = countMatches(num, lotteryResults, isMultiStation, prizeFilter, bet.station);
         
         if (matchCount > 0) {
           matchedNumbers.push({ num, matchCount });

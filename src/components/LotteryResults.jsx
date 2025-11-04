@@ -10,32 +10,49 @@ export default function LotteryResults({ results, betList = [] }) {
                          !results.special && 
                          !results.first;
 
-  // Extract all bet numbers (last 2 digits)
-  const getBetEndings = () => {
-    const endings = new Set();
-    betList.forEach(bet => {
+  // Check if a number matches any bet for a specific station
+  const isWinningNumber = (num, stationName) => {
+    if (!num) return false;
+    const numStr = String(num).trim();
+    
+    // Normalize single digit with leading zero
+    let normalizedNum = numStr;
+    if (numStr.length === 1) {
+      normalizedNum = '0' + numStr;
+    }
+    
+    if (normalizedNum.length < 2) return false;
+    const last2 = normalizedNum.slice(-2);
+    const last3 = normalizedNum.length >= 3 ? normalizedNum.slice(-3) : null;
+    
+    // Check if any bet matches this number AND this station
+    return betList.some(bet => {
+      // Check if this bet includes the current station
+      const betStations = Array.isArray(bet.station) ? bet.station : [bet.station];
+      const stationMatch = betStations.includes(stationName);
+      
+      if (!stationMatch) return false;
+      
+      // Check if any number in this bet matches
       if (bet.numbers && Array.isArray(bet.numbers)) {
-        bet.numbers.forEach(num => {
-          const numStr = String(num);
-          if (numStr.length >= 2) {
-            endings.add(numStr.slice(-2));
+        return bet.numbers.some(betNum => {
+          const betNumStr = String(betNum).trim();
+          let normalizedBetNum = betNumStr;
+          if (betNumStr.length === 1) {
+            normalizedBetNum = '0' + betNumStr;
           }
+          
+          // Match based on length
+          if (normalizedBetNum.length === 2) {
+            return last2 === normalizedBetNum;
+          } else if (normalizedBetNum.length === 3 && last3) {
+            return last3 === normalizedBetNum;
+          }
+          return false;
         });
       }
+      return false;
     });
-    return endings;
-  };
-
-  const betEndings = getBetEndings();
-  console.log('Bet endings to highlight:', Array.from(betEndings));
-
-  // Check if a number matches any bet
-  const isWinningNumber = (num) => {
-    if (!num) return false;
-    const numStr = String(num);
-    if (numStr.length < 2) return false;
-    const last2 = numStr.slice(-2);
-    return betEndings.has(last2);
   };
 
   // Prize order from 8th to special with font sizes
@@ -114,7 +131,7 @@ export default function LotteryResults({ results, betList = [] }) {
                           ) : (
                             <div className="font-bold whitespace-pre-line">
                               {formatted.split(', ').map((num, i) => {
-                                const isWon = isWinningNumber(num);
+                                const isWon = isWinningNumber(num, station);
                                 return (
                                   <div 
                                     key={i}
@@ -201,7 +218,9 @@ export default function LotteryResults({ results, betList = [] }) {
                     ) : (
                       <div className="font-bold whitespace-pre-line">
                         {formatted.split(', ').map((num, i) => {
-                          const isWon = isWinningNumber(num);
+                          // For single station, use the station name from results
+                          const stationName = results.station || results.province || '';
+                          const isWon = isWinningNumber(num, stationName);
                           return (
                             <div 
                               key={i}
