@@ -347,7 +347,7 @@ QUAN TRỌNG: Mã đài có hiệu lực CHO ĐẾN KHI gặp mã đài mới:
 `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.0-flash',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
         temperature: 0
@@ -375,4 +375,5 @@ QUAN TRỌNG: Mã đài có hiệu lực CHO ĐẾN KHI gặp mã đài mới:
     };
   }
 }
+
 
