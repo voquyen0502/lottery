@@ -82,7 +82,10 @@ export async function fetchLotteryResult(station, date, region = null) {
     const dateStr = typeof date === 'string' ? formatDateForMinhNgoc(date) : formatDateForMinhNgoc(formatDate(date));
     console.log('Date formatted:', dateStr);
     
-    const url = `https://www.minhngoc.net.vn/ket-qua-xo-so/${targetRegion}/${dateStr}.html`;
+    // Use different URL pattern for mien-bac
+    const url = targetRegion === 'mien-bac'
+      ? `https://www.minhngoc.net.vn/kqxs/mien-bac/${dateStr}.html`
+      : `https://www.minhngoc.net.vn/ket-qua-xo-so/${targetRegion}/${dateStr}.html`;
     console.log('Target URL:', url);
     
     // Try each proxy until one works
@@ -306,4 +309,65 @@ export function formatDate(date) {
 
 export function getTodayDate() {
   return formatDate(new Date());
+}
+
+// Weekly schedule for each region (theo thứ tự chính xác từ minhngoc.net.vn)
+const WEEKLY_SCHEDULE = {
+  'mien-nam': {
+    1: ['tp-hcm', 'dong-thap', 'ca-mau'], // Thứ 2
+    2: ['ben-tre', 'vung-tau', 'bac-lieu'], // Thứ 3
+    3: ['dong-nai', 'can-tho', 'soc-trang'], // Thứ 4
+    4: ['tay-ninh', 'an-giang', 'binh-thuan'], // Thứ 5
+    5: ['vinh-long', 'binh-duong', 'tra-vinh'], // Thứ 6
+    6: ['tp-hcm', 'long-an', 'binh-phuoc', 'hau-giang'], // Thứ 7
+    0: ['tien-giang', 'kien-giang', 'da-lat'] // Chủ nhật
+  },
+  'mien-trung': {
+    1: ['thua-thien-hue', 'phu-yen'], // Thứ 2
+    2: ['dak-lak', 'quang-nam'], // Thứ 3
+    3: ['da-nang', 'khanh-hoa'], // Thứ 4
+    4: ['binh-dinh', 'quang-tri', 'quang-binh'], // Thứ 5
+    5: ['gia-lai', 'ninh-thuan'], // Thứ 6
+    6: ['da-nang', 'quang-ngai', 'dak-nong'], // Thứ 7
+    0: ['khanh-hoa', 'kon-tum', 'thua-thien-hue'] // Chủ nhật
+  },
+  'mien-bac': {
+    // Miền Bắc có kết quả mỗi ngày (chỉ 1 kết quả/ngày)
+    1: ['ha-noi'], // Thứ 2
+    2: ['quang-ninh'], // Thứ 3
+    3: ['bac-ninh'], // Thứ 4
+    4: ['ha-noi'], // Thứ 5
+    5: ['hai-phong'], // Thứ 6
+    6: ['nam-dinh'], // Thứ 7
+    0: ['thai-binh'] // Chủ nhật
+  }
+};
+
+// Get available stations for a specific date, grouped by region
+export function getScheduleForDate(date) {
+  const dateObj = new Date(date);
+  const dayOfWeek = dateObj.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+
+  const schedule = {
+    'mien-nam': [],
+    'mien-trung': [],
+    'mien-bac': []
+  };
+
+  // Get stations for each region based on day of week
+  Object.entries(WEEKLY_SCHEDULE).forEach(([region, weekSchedule]) => {
+    const stationsForDay = weekSchedule[dayOfWeek] || [];
+    
+    stationsForDay.forEach(stationKey => {
+      if (STATION_MAP[stationKey]) {
+        schedule[region].push({
+          key: stationKey,
+          name: STATION_MAP[stationKey].name,
+          region: region
+        });
+      }
+    });
+  });
+
+  return schedule;
 }

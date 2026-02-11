@@ -1,15 +1,15 @@
 import { useState } from 'react';
 import InputSection from './components/InputSection';
 import BetListTable from './components/BetListTable';
+import BetListEditor from './components/BetListEditor';
 import BetResultsTable from './components/BetResultsTable';
 import LotteryResults from './components/LotteryResults';
 import LoadingSpinner from './components/LoadingSpinner';
-import HistorySection from './components/HistorySection';
 import StationList from './components/StationList';
 import { parseMessageWithGemini } from './utils/gemini';
 import { fetchLotteryResult } from './utils/xoso';
 import { checkBetList } from './utils/checker';
-import { saveToHistory } from './utils/storage';
+import { getCachedLotteryResult, saveLotteryResult } from './utils/storage';
 
 function App() {
   const [loading, setLoading] = useState(false);
@@ -17,10 +17,13 @@ function App() {
   const [parsedData, setParsedData] = useState(null);
   const [lotteryResults, setLotteryResults] = useState(null);
   const [checkResults, setCheckResults] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 
   const handleAnalyze = async (message, date) => {
     setLoading(true);
     setLoadingMessage('Đang phân tích...');
+    setSelectedDate(date); // Save selected date for editor
 
     try {
       // Truyền cả message và date vào Gemini để xác định "2đ"
@@ -28,14 +31,6 @@ function App() {
 
       if (result.success) {
         setParsedData(result.data);
-        
-        // Save to history
-        if (result.data.bet_list && result.data.bet_list.length > 0) {
-          saveToHistory({
-            bet_list: result.data.bet_list,
-            date: date
-          });
-        }
       } else {
         alert(`Lỗi: ${result.error}`);
       }
@@ -44,6 +39,15 @@ function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleBetListChange = (updatedBetList) => {
+    setParsedData({
+      ...parsedData,
+      bet_list: updatedBetList
+    });
+    // Clear check results when bet list changes
+    setCheckResults(null);
   };
 
   const handleFetch = async (date) => {
@@ -76,9 +80,22 @@ function App() {
       // Fetch results for all stations
       const allResults = {};
       let fetchedCount = 0;
+      let cachedCount = 0;
       
       for (const station of uniqueStations) {
         fetchedCount++;
+        
+        // Check cache first
+        const cached = getCachedLotteryResult(station, date);
+        if (cached) {
+          cachedCount++;
+          allResults[station] = cached;
+          console.log(`📦 Using cached results for ${station}`);
+          setLoadingMessage(`Đang lấy kết quả ${fetchedCount}/${uniqueStations.length}: ${station} (từ cache)...`);
+          continue;
+        }
+        
+        // Fetch from server if not cached
         setLoadingMessage(`Đang lấy kết quả ${fetchedCount}/${uniqueStations.length}: ${station}...`);
         
         const region = stationRegionMap.get(station);
@@ -86,7 +103,9 @@ function App() {
         
         if (result.success) {
           allResults[station] = result.data;
-          console.log(`✅ Fetched results for ${station}:`, result.data);
+          // Save to cache
+          saveLotteryResult(station, date, result.data);
+          console.log(`✅ Fetched and cached results for ${station}:`, result.data);
         } else {
           console.error(`❌ Failed to fetch ${station}:`, result.error);
           alert(`Lỗi lấy kết quả ${station}: ${result.error}`);
@@ -94,7 +113,7 @@ function App() {
       }
 
       if (Object.keys(allResults).length > 0) {
-        console.log('All lottery results:', allResults);
+        console.log(`All lottery results (${cachedCount} từ cache, ${fetchedCount - cachedCount} mới):`, allResults);
         setLotteryResults(allResults);
 
         // Check bet list against lottery results
@@ -118,23 +137,13 @@ function App() {
     setCheckResults(null);
   };
 
-  const handleLoadHistory = (item) => {
-    // Convert old format to new bet_list format if needed
-    if (item.station && item.numbers) {
-      setParsedData({
-        bet_list: [{
-          station: [item.station],
-          type: 'da',
-          numbers: item.numbers,
-          money: 10000,
-          note: 'Từ lịch sử'
-        }]
-      });
-    } else {
-      setParsedData(item);
+  // Open manual editor: create empty bet_list if none exists
+  const handleOpenManualEditor = (date) => {
+    if (!parsedData) {
+      setParsedData({ bet_list: [] });
     }
-    setLotteryResults(null);
-    setCheckResults(null);
+    if (date) setSelectedDate(date);
+    setIsEditing(true);
   };
 
   return (
@@ -156,10 +165,45 @@ function App() {
           onFetch={handleFetch}
           onReset={handleReset}
           loading={loading}
+          hasData={parsedData && parsedData.bet_list && parsedData.bet_list.length > 0}
         />
 
+        {/* Quick action: allow manual bet list editing even without parsing */}
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={() => handleOpenManualEditor(selectedDate)}
+            className="px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700"
+          >
+            ➕ Thêm thủ công
+          </button>
+        </div>
+
         {parsedData && parsedData.bet_list && (
-          <BetListTable betList={parsedData.bet_list} />
+          <div className="mb-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-800">Danh sách cược</h2>
+              <button
+                onClick={() => setIsEditing(!isEditing)}
+                className={`px-4 py-2 rounded-lg transition-colors ${
+                  isEditing
+                    ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
+              >
+                {isEditing ? '📋 Xem bảng' : '✏️ Chỉnh sửa'}
+              </button>
+            </div>
+            
+            {isEditing ? (
+              <BetListEditor
+                betList={parsedData.bet_list}
+                onChange={handleBetListChange}
+                selectedDate={selectedDate}
+              />
+            ) : (
+              <BetListTable betList={parsedData.bet_list} />
+            )}
+          </div>
         )}
 
         {checkResults && <BetResultsTable results={checkResults} />}
@@ -172,8 +216,6 @@ function App() {
         )}
 
         <StationList />
-
-        <HistorySection onLoadHistory={handleLoadHistory} />
 
         {/* Loading spinner */}
         {loading && <LoadingSpinner message={loadingMessage} />}

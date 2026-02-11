@@ -12,6 +12,62 @@ export async function parseMessageWithGemini(message, date = null) {
     
     // Format date for prompt
     const dateInfo = date ? new Date(date).toLocaleDateString('vi-VN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : 'Không có thông tin ngày';
+    
+    // Get stations available for this date
+    const { getScheduleForDate } = await import('./xoso.js');
+    const schedule = date ? getScheduleForDate(date) : null;
+    
+    // Build station list and codes for prompt
+    let stationListText = '';
+    let stationCodesText = '';
+    
+    if (schedule) {
+      // Station names
+      if (schedule['mien-nam'].length > 0) {
+        stationListText += `\n   MIỀN NAM HÔM NAY: ${schedule['mien-nam'].map(s => s.name).join(', ')}`;
+      }
+      if (schedule['mien-trung'].length > 0) {
+        stationListText += `\n   MIỀN TRUNG HÔM NAY: ${schedule['mien-trung'].map(s => s.name).join(', ')}`;
+      }
+      if (schedule['mien-bac'].length > 0) {
+        stationListText += `\n   MIỀN BẮC HÔM NAY: ${schedule['mien-bac'].map(s => s.name).join(', ')}`;
+      }
+      
+      // Station codes mapping (only for today's stations)
+      const stationCodeMap = {
+        'tp-hcm': 'TP', 'dong-thap': 'ĐT', 'ca-mau': 'CM',
+        'ben-tre': 'BT', 'vung-tau': 'VT', 'bac-lieu': 'BL',
+        'dong-nai': 'DN', 'can-tho': 'CT', 'soc-trang': 'ST',
+        'tay-ninh': 'TN', 'an-giang': 'AG', 'binh-thuan': 'BTH',
+        'vinh-long': 'VL', 'binh-duong': 'BD', 'tra-vinh': 'TV',
+        'long-an': 'LA', 'binh-phuoc': 'BP', 'hau-giang': 'HG',
+        'tien-giang': 'TG', 'kien-giang': 'KG', 'da-lat': 'DL',
+        'thua-thien-hue': 'H', 'phu-yen': 'PY',
+        'dak-lak': 'ĐL', 'quang-nam': 'QNM',
+        'da-nang': 'DN', 'khanh-hoa': 'KH',
+        'binh-dinh': 'BĐ', 'quang-tri': 'QT', 'quang-binh': 'QB',
+        'gia-lai': 'GL', 'ninh-thuan': 'NT',
+        'quang-ngai': 'QNG', 'dak-nong': 'ĐNO',
+        'kon-tum': 'KT',
+        'ha-noi': 'HN', 'quang-ninh': 'QN', 'bac-ninh': 'BN',
+        'hai-phong': 'HP', 'nam-dinh': 'NĐ', 'thai-binh': 'TB'
+      };
+      
+      const allStationsToday = [
+        ...schedule['mien-nam'],
+        ...schedule['mien-trung'],
+        ...schedule['mien-bac']
+      ];
+      
+      const todayCodes = allStationsToday
+        .filter(s => stationCodeMap[s.key])
+        .map(s => `"${stationCodeMap[s.key]}" → "${s.key}"`);
+      
+      if (todayCodes.length > 0) {
+        stationCodesText = '\n\n   MÃ ĐÀI HÔM NAY:\n   ' + todayCodes.join('\n   ');
+      }
+    }
+    
     console.log('Parsing message with Gemini:', cleanedMessage, 'Date:', dateInfo);
     const prompt = `Phân tích tin nhắn xổ số tiếng Việt và trích xuất thông tin chi tiết về các cược.
 Trả về CHỈ một JSON object với format sau (không có markdown, không có giải thích):
@@ -35,21 +91,7 @@ Ngày: ${dateInfo}
 QUY TẮC PHÂN TÍCH MÃ CƯỢC:
 ════════════════════════════════════════════════════════════════════
 
-1. MÃ ĐÀI (Station Codes):
-   ├─ "BP" → "binh-phuoc"      ├─ "VT" → "vung-tau"        ├─ "HG" → "hau-giang"
-   ├─ "CT" → "can-tho"          ├─ "DN" → "dong-nai"        ├─ "CM" → "ca-mau"
-   ├─ "BT" → "ben-tre"          ├─ "TG" → "tien-giang"      ├─ "TP" → "tp-hcm"
-   ├─ "BL" → "bac-lieu"         ├─ "ST" → "soc-trang"       ├─ "TN" → "tay-ninh"
-   ├─ "AG" → "an-giang"         ├─ "BTH" → "binh-thuan"     ├─ "VL" → "vinh-long"
-   ├─ "BD" → "binh-duong"       ├─ "TV" → "tra-vinh"        ├─ "LA" → "long-an"
-   ├─ "KG" → "kien-giang"       ├─ "DL" → "da-lat"          ├─ "ĐT" → "dong-thap"
-   ├─ "DN" (trung) → "da-nang"  ├─ "KH" → "khanh-hoa"      ├─ "BĐ" → "binh-dinh"
-   ├─ "QT" → "quang-tri"        ├─ "QB" → "quang-binh"     ├─ "GL" → "gia-lai"
-   ├─ "NT" → "ninh-thuan"       ├─ "QNM" → "quang-nam"     ├─ "ĐL" → "dak-lak"
-   ├─ "QNG" → "quang-ngai"      ├─ "ĐNO" → "dak-nong"      ├─ "KT" → "kon-tum"
-   ├─ "H" → "thua-thien-hue"    ├─ "PY" → "phu-yen"        
-   ├─ "HN" → "ha-noi"           ├─ "QN" → "quang-ninh"     ├─ "BN" → "bac-ninh"
-   └─ "HP" → "hai-phong"        └─ "NĐ" → "nam-dinh"       └─ "TB" → "thai-binh"
+1. MÃ ĐÀI (Station Codes):${stationCodesText}
 
    * Nhiều đài: "BP+HG" → ["binh-phuoc", "hau-giang"], "2đ tpla" → ["tp-hcm", "long-an"]
    * Tên đầy đủ: "Hậu Giang" → ["hau-giang"]
@@ -68,41 +110,11 @@ QUY TẮC PHÂN TÍCH MÃ CƯỢC:
        "3đ mt" = 3 đài đầu miền trung
        "4đ mb" = 4 đài đầu miền bắc (nhưng miền bắc chỉ có 1 đài/ngày nên lấy 1)
    
-   LỊCH XỔ SỐ MIỀN NAM (theo thứ trong tuần):
-   ┌─────────────┬──────────────────────────────────────────────────┐
-   │ Thứ Hai     │ TP.HCM, Đồng Tháp, Cà Mau                        │
-   │ Thứ Ba      │ Bến Tre, Vũng Tàu, Bạc Liêu                      │
-   │ Thứ Tư      │ Đồng Nai, Cần Thơ, Sóc Trăng                     │
-   │ Thứ Năm     │ Tây Ninh, An Giang, Bình Thuận                   │
-   │ Thứ Sáu     │ Vĩnh Long, Bình Dương, Trà Vinh                  │
-   │ Thứ Bảy     │ TP.HCM, Long An, Bình Phước, Hậu Giang           │
-   │ Chủ Nhật    │ Tiền Giang, Kiên Giang, Đà Lạt                   │
-   └─────────────┴──────────────────────────────────────────────────┘
+   ĐÀI MỞ THƯỞNG HÔM NAY:${stationListText}
    
-   LỊCH XỔ SỐ MIỀN TRUNG (theo thứ trong tuần):
-   ┌─────────────┬──────────────────────────────────────────────────┐
-   │ Thứ Hai     │ Thừa Thiên Huế, Phú Yên                          │
-   │ Thứ Ba      │ Đắk Lắk, Quảng Nam                               │
-   │ Thứ Tư      │ Đà Nẵng, Khánh Hòa                               │
-   │ Thứ Năm     │ Bình Định, Quảng Trị, Quảng Bình                 │
-   │ Thứ Sáu     │ Gia Lai, Ninh Thuận                              │
-   │ Thứ Bảy     │ Đà Nẵng, Quảng Ngãi, Đắk Nông                    │
-   │ Chủ Nhật    │ Khánh Hòa, Kon Tum, Thừa Thiên Huế               │
-   └─────────────┴──────────────────────────────────────────────────┘
-   
-   LỊCH XỔ SỐ MIỀN BẮC:
-   ┌─────────────┬──────────────────────────────────────────────────┐
-   │ Mỗi ngày    │ Chỉ có 1 kết quả chung cho cả miền               │
-   └─────────────┴──────────────────────────────────────────────────┘
-   
-   → "2đ" = 2 đài ĐẦU TIÊN của ngày đó (miền nam)
-   → "3đ mt" = 3 đài đầu tiên miền trung của ngày đó
-   → "mb" = miền bắc (chỉ 1 kết quả)
-   
-   VD: 
-   - Thứ Bảy, "2đ" → ["tp-hcm", "long-an"] (miền nam)
-   - Thứ Bảy, "3đ mt" → ["da-nang", "quang-ngai", "dak-nong"] (miền trung)
-   - Thứ Hai, "3đ" → ["tp-hcm", "dong-thap", "ca-mau"] (miền nam - mặc định)
+   → "2đ" = lấy 2 đài ĐẦU TIÊN trong danh sách miền nam hôm nay
+   → "3đ mt" = lấy 3 đài đầu tiên trong danh sách miền trung hôm nay
+   → "mb" = miền bắc (chỉ 1 đài)
 
 2. MÃ LOẠI CƯỢC (Bet Type Codes):
    ├─ "dx", "đx" hoặc "đa" → "xien" (đánh xiên 2-4 số)
@@ -196,138 +208,48 @@ QUY TẮC PHÂN TÍCH MÃ CƯỢC:
    * Nếu region="mien-bac" và không chỉ rõ tỉnh → station có thể null
 
 ════════════════════════════════════════════════════════════════════
-VÍ DỤ ĐẦY ĐỦ:
+VÍ DỤ CHO CÁC TRƯỜNG HỢP ĐẶC BIỆT:
 ════════════════════════════════════════════════════════════════════
 
-Input: "BP+Hậu Giang. 70 34.dx4n.BP.70.b5n.470.b1n.7lo3n xc20n.Hậu Giang. 34.b5n.834.b1n.7lo3n.xc20n."
+1. ĐA LOẠI CƯỢC VỚI CÙNG SỐ:
+   Input: "BP.470.b1n.7lo3n.xc20n"
+   → 3 cược riêng biệt: bao-lo (1000), 7-lo (3000), xiu-chu (20000)
+   
+2. CHUYỂN ĐỔI MÃ ĐÀI GIỮA CƯỢC:
+   Input: "2đ tpla.777b5n.bphg.07 70 b5ndx1n"
+   → Cược 1: TP+LA với số 777 (bao 5k)
+   → Cược 2,3: BP+HG với số 07,70 (bao 5k + xiên 1k)
+   
+3. "2đ" VỚI LỊCH THEO NGÀY:
+   Input: "2đ.399.b1n" (Thứ Bảy)
+   → Tra lịch Thứ Bảy miền nam: TP, LA, BP, HG
+   → Lấy 2 đài đầu: ["tp-hcm", "long-an"]
+   
+4. NHIỀU SỐ VÀ LOẠI CƯỢC:
+   Input: "2đ.39 24.b5n.dx5n.52 92.b2n.dx2n"
+   → Cược 1: 39,24 bao 5k
+   → Cược 2: 39,24 xiên 5k (cùng số)
+   → Cược 3: 52,92 bao 2k
+   → Cược 4: 52,92 xiên 2k (cùng số)
+   
+5. GIỮ NGUYÊN SỐ 0 ĐẦU:
+   Input: "Tp.01 07.b5n"
+   → numbers: ["01", "07"] (KHÔNG phải ["1", "7"])
 
-Output:
-{
-  "bet_list": [
-    {
-      "station": ["binh-phuoc", "hau-giang"],
-      "region": "mien-nam",
-      "type": "xien",
-      "numbers": ["70", "34"],
-      "money": 4000,
-      "note": "Xiên 2 số trên 2 đài"
-    },
-    {
-      "station": ["binh-phuoc"],
-      "region": "mien-nam",
-      "type": "bao-lo",
-      "numbers": ["70"],
-      "money": 5000,
-      "note": null
-    },
-    {
-      "station": ["binh-phuoc"],
-      "region": "mien-nam",
-      "type": "bao-lo",
-      "numbers": ["470"],
-      "money": 1000,
-      "note": null
-    },
-    {
-      "station": ["binh-phuoc"],
-      "region": "mien-nam",
-      "type": "7-lo",
-      "numbers": ["470"],
-      "money": 3000,
-      "note": null
-    },
-    {
-      "station": ["binh-phuoc"],
-      "region": "mien-nam",
-      "type": "xiu-chu",
-      "numbers": ["470"],
-      "money": 20000,
-      "note": null
-    },
-    {
-      "station": ["hau-giang"],
-      "region": "mien-nam",
-      "type": "bao-lo",
-      "numbers": ["34"],
-      "money": 5000,
-      "note": null
-    },
-    {
-      "station": ["hau-giang"],
-      "region": "mien-nam",
-      "type": "bao-lo",
-      "numbers": ["834"],
-      "money": 1000,
-      "note": null
-    },
-    {
-      "station": ["hau-giang"],
-      "region": "mien-nam",
-      "type": "7-lo",
-      "numbers": ["834"],
-      "money": 3000,
-      "note": null
-    },
-    {
-      "station": ["hau-giang"],
-      "region": "mien-nam",
-      "type": "xiu-chu",
-      "numbers": ["834"],
-      "money": 20000,
-      "note": null
-    }
-  ]
-}
+════════════════════════════════════════════════════════════════════
+VÍ DỤ JSON OUTPUT CHUẨN:
+════════════════════════════════════════════════════════════════════
 
-────────────────────────────────────────────────────────────────────
+Input: "2đ tpla.39 24.b5n.dx2n.BP.07 70.b10n"
 
-Input 2: "2đ tpla 777b5n 07 70 56 65 b10ndx2n 35 53b5ndx2n bphg 07 70 b5ndx1n 35 53b5ndx1n 56 65 b10ndx2n"
-
-Phân tích:
-┌─────────────────────────────────────────────────────────────────┐
-│ "2đ tpla" → 2 đài: TP.HCM + Long An                            │
-│ "777b5n" → số 777, bao lô, 5000đ                               │
-│ "07 70 56 65 b10ndx2n" → 4 số (07,70,56,65), bao 10k + xiên 2k│
-│ "35 53b5ndx2n" → 2 số (35,53), bao 5k + xiên 2k                │
-│                                                                 │
-│ "bphg" → chuyển sang 2 đài mới: Bình Phước + Hậu Giang        │
-│ "07 70 b5ndx1n" → 2 số (07,70), bao 5k + xiên 1k              │
-│ "35 53b5ndx1n" → 2 số (35,53), bao 5k + xiên 1k               │
-│ "56 65 b10ndx2n" → 2 số (56,65), bao 10k + xiên 2k            │
-└─────────────────────────────────────────────────────────────────┘
-
-Output:
+Output (JSON thuần túy, KHÔNG có markdown):
 {
   "bet_list": [
     {
       "station": ["tp-hcm", "long-an"],
       "region": "mien-nam",
       "type": "bao-lo",
-      "numbers": ["777"],
-      "money": 5000,
-      "note": "2 đài TP+LA"
-    },
-    {
-      "station": ["tp-hcm", "long-an"],
-      "region": "mien-nam",
-      "type": "bao-lo",
-      "numbers": ["07", "70", "56", "65"],
-      "money": 10000,
-      "note": null
-    },
-    {
-      "station": ["tp-hcm", "long-an"],
-      "region": "mien-nam",
-      "type": "xien",
-      "numbers": ["07", "70", "56", "65"],
-      "money": 2000,
-      "note": "Xiên 4 số"
-    },
-    {
-      "station": ["tp-hcm", "long-an"],
-      "region": "mien-nam",
-      "type": "bao-lo",
-      "numbers": ["35", "53"],
+      "numbers": ["39", "24"],
       "money": 5000,
       "note": null
     },
@@ -335,322 +257,15 @@ Output:
       "station": ["tp-hcm", "long-an"],
       "region": "mien-nam",
       "type": "xien",
-      "numbers": ["35", "53"],
+      "numbers": ["39", "24"],
       "money": 2000,
       "note": null
     },
     {
-      "station": ["binh-phuoc", "hau-giang"],
+      "station": ["binh-phuoc"],
       "region": "mien-nam",
       "type": "bao-lo",
       "numbers": ["07", "70"],
-      "money": 5000,
-      "note": null
-    },
-    {
-      "station": ["binh-phuoc", "hau-giang"],
-      "region": "mien-nam",
-      "type": "xien",
-      "numbers": ["07", "70"],
-      "money": 1000,
-      "note": null
-    },
-    {
-      "station": ["binh-phuoc", "hau-giang"],
-      "region": "mien-nam",
-      "type": "bao-lo",
-      "numbers": ["35", "53"],
-      "money": 5000,
-      "note": null
-    },
-    {
-      "station": ["binh-phuoc", "hau-giang"],
-      "region": "mien-nam",
-      "type": "xien",
-      "numbers": ["35", "53"],
-      "money": 1000,
-      "note": null
-    },
-    {
-      "station": ["binh-phuoc", "hau-giang"],
-      "region": "mien-nam",
-      "type": "bao-lo",
-      "numbers": ["56", "65"],
-      "money": 10000,
-      "note": null
-    },
-    {
-      "station": ["binh-phuoc", "hau-giang"],
-      "region": "mien-nam",
-      "type": "xien",
-      "numbers": ["56", "65"],
-      "money": 2000,
-      "note": null
-    }
-  ]
-}
-
-────────────────────────────────────────────────────────────────────
-
-Input 3: "2đ.399.b1n"
-Ngày: Thứ Bảy, 3 tháng 11 năm 2025
-
-Phân tích:
-┌─────────────────────────────────────────────────────────────────┐
-│ "2đ" → Không có tên đài cụ thể, không có mã miền               │
-│ → MẶC ĐỊNH: Miền Nam                                           │
-│ → Tra lịch: Thứ Bảy miền Nam = TP.HCM, Long An, BP, Hậu Giang │
-│ → Lấy 2 đài ĐẦU TIÊN: ["tp-hcm", "long-an"]                   │
-│                                                                 │
-│ "399" → số cần đánh                                            │
-│ "b1n" → bao lô, 1000đ                                          │
-└─────────────────────────────────────────────────────────────────┘
-
-Output:
-{
-  "bet_list": [
-    {
-      "station": ["tp-hcm", "long-an"],
-      "region": "mien-nam",
-      "type": "bao-lo",
-      "numbers": ["399"],
-      "money": 1000,
-      "note": "2 đài đầu tiên của Thứ Bảy (miền nam)"
-    }
-  ]
-}
-
-────────────────────────────────────────────────────────────────────
-
-Input 4: "2đ.39.24.b5n.dx5n.52.92.b2n.dx2n"
-Ngày: Thứ Hai (TP.HCM, Đồng Tháp, Cà Mau)
-
-Phân tích:
-┌─────────────────────────────────────────────────────────────────┐
-│ "2đ" → 2 đài đầu tiên: ["tp-hcm", "dong-thap"]                │
-│ "39.24.b5n" → 2 số (39, 24), bao lô, 5000đ                    │
-│ "dx5n" → CÙNG 2 số (39, 24), xiên, 5000đ                      │
-│ "52.92.b2n" → 2 số (52, 92), bao lô, 2000đ                    │
-│ "dx2n" → CÙNG 2 số (52, 92), xiên, 2000đ                      │
-└─────────────────────────────────────────────────────────────────┘
-
-Output:
-{
-  "bet_list": [
-    {
-      "station": ["tp-hcm", "dong-thap"],
-      "region": "mien-nam",
-      "type": "bao-lo",
-      "numbers": ["39", "24"],
-      "money": 5000,
-      "note": null
-    },
-    {
-      "station": ["tp-hcm", "dong-thap"],
-      "region": "mien-nam",
-      "type": "xien",
-      "numbers": ["39", "24"],
-      "money": 5000,
-      "note": null
-    },
-    {
-      "station": ["tp-hcm", "dong-thap"],
-      "region": "mien-nam",
-      "type": "bao-lo",
-      "numbers": ["52", "92"],
-      "money": 2000,
-      "note": null
-    },
-    {
-      "station": ["tp-hcm", "dong-thap"],
-      "region": "mien-nam",
-      "type": "xien",
-      "numbers": ["52", "92"],
-      "money": 2000,
-      "note": null
-    }
-  ]
-}
-
-────────────────────────────────────────────────────────────────────
-
-Input 5: "Tp.01 41 81 21 61 b5n..ĐT.03 43 83 23 63 b5n"
-
-Phân tích:
-┌─────────────────────────────────────────────────────────────────┐
-│ "Tp" → TP.HCM ["tp-hcm"]                                       │
-│ "01 41 81 21 61" → 5 số (LƯU Ý: "01" giữ nguyên số 0)        │
-│ "b5n" → bao lô, 5000đ                                          │
-│                                                                 │
-│ "ĐT" → Đồng Tháp ["dong-thap"]                                │
-│ "03 43 83 23 63" → 5 số (LƯU Ý: "03" giữ nguyên số 0)        │
-│ "b5n" → bao lô, 5000đ                                          │
-└─────────────────────────────────────────────────────────────────┘
-
-Output:
-{
-  "bet_list": [
-    {
-      "station": ["tp-hcm"],
-      "region": "mien-nam",
-      "type": "bao-lo",
-      "numbers": ["01", "41", "81", "21", "61"],
-      "money": 5000,
-      "note": null
-    },
-    {
-      "station": ["dong-thap"],
-      "region": "mien-nam",
-      "type": "bao-lo",
-      "numbers": ["03", "43", "83", "23", "63"],
-      "money": 5000,
-      "note": null
-    }
-  ]
-}
-
-────────────────────────────────────────────────────────────────────
-
-Input 5: "3đ mt.56 88.dx5n"
-Ngày: Thứ Bảy, 3 tháng 11 năm 2025
-
-Phân tích:
-┌─────────────────────────────────────────────────────────────────┐
-│ "3đ mt" → 3 đài, mã miền "mt" (miền trung)                     │
-│ → Tra lịch: Thứ Bảy miền Trung = Đà Nẵng, Quảng Ngãi, Đắk Nông│
-│ → Lấy 3 đài ĐẦU TIÊN: ["da-nang", "quang-ngai", "dak-nong"]   │
-│                                                                 │
-│ "56 88" → 2 số cần xiên                                        │
-│ "dx5n" → đánh xiên, 5000đ                                      │
-└─────────────────────────────────────────────────────────────────┘
-
-Output:
-{
-  "bet_list": [
-    {
-      "station": ["da-nang", "quang-ngai", "dak-nong"],
-      "region": "mien-trung",
-      "type": "xien",
-      "numbers": ["56", "88"],
-      "money": 5000,
-      "note": "3 đài đầu tiên của Thứ Bảy (miền trung)"
-    }
-  ]
-}
-
-────────────────────────────────────────────────────────────────────
-
-Input 6: "2đ.39.24.b5n.dx5n.52.92.b2n.dx2n. 52 24 56 b10n dx3n 68.32.268.b5n.TP.97.b10n 397.839.b1n.7lo3n.xc10n."
-Ngày: Thứ Hai, 3 tháng 11 năm 2025
-
-Phân tích:
-┌─────────────────────────────────────────────────────────────────┐
-│ "2đ" → 2 đài đầu tiên: ["tp-hcm", "dong-thap"]                │
-│ → MÃ ĐÀI TOÀN CỤC áp dụng cho TẤT CẢ các bet sau              │
-│                                                                 │
-│ "39.24.b5n" → station: ["tp-hcm", "dong-thap"]                │
-│ "dx5n" → station: ["tp-hcm", "dong-thap"]                     │
-│ "52.92.b2n" → station: ["tp-hcm", "dong-thap"]                │
-│ "dx2n" → station: ["tp-hcm", "dong-thap"]                     │
-│ "52 24 56 b10n" → station: ["tp-hcm", "dong-thap"]            │
-│ "dx3n" → station: ["tp-hcm", "dong-thap"]                     │
-│ "68.32.268.b5n" → station: ["tp-hcm", "dong-thap"]            │
-│                                                                 │
-│ "TP.97.b10n" → station: ["tp-hcm"] ← CHỈ bet này              │
-│                                                                 │
-│ "397.839.b1n" → station: ["tp-hcm", "dong-thap"] ← Quay lại 2đ│
-│ "7lo3n" → station: ["tp-hcm", "dong-thap"]                    │
-│ "xc10n" → station: ["tp-hcm", "dong-thap"]                    │
-└─────────────────────────────────────────────────────────────────┘
-
-Output:
-{
-  "bet_list": [
-    {
-      "station": ["tp-hcm", "dong-thap"],
-      "region": "mien-nam",
-      "type": "bao-lo",
-      "numbers": ["39", "24"],
-      "money": 5000,
-      "note": null
-    },
-    {
-      "station": ["tp-hcm", "dong-thap"],
-      "region": "mien-nam",
-      "type": "xien",
-      "numbers": ["39", "24"],
-      "money": 5000,
-      "note": null
-    },
-    {
-      "station": ["tp-hcm", "dong-thap"],
-      "region": "mien-nam",
-      "type": "bao-lo",
-      "numbers": ["52", "92"],
-      "money": 2000,
-      "note": null
-    },
-    {
-      "station": ["tp-hcm", "dong-thap"],
-      "region": "mien-nam",
-      "type": "xien",
-      "numbers": ["52", "92"],
-      "money": 2000,
-      "note": null
-    },
-    {
-      "station": ["tp-hcm", "dong-thap"],
-      "region": "mien-nam",
-      "type": "bao-lo",
-      "numbers": ["52", "24", "56"],
-      "money": 10000,
-      "note": null
-    },
-    {
-      "station": ["tp-hcm", "dong-thap"],
-      "region": "mien-nam",
-      "type": "xien",
-      "numbers": ["52", "24", "56"],
-      "money": 3000,
-      "note": null
-    },
-    {
-      "station": ["tp-hcm", "dong-thap"],
-      "region": "mien-nam",
-      "type": "bao-lo",
-      "numbers": ["68", "32", "268"],
-      "money": 5000,
-      "note": null
-    },
-    {
-      "station": ["tp-hcm"],
-      "region": "mien-nam",
-      "type": "bao-lo",
-      "numbers": ["97"],
-      "money": 10000,
-      "note": "TP. thay đổi mã đài thành tp-hcm"
-    },
-    {
-      "station": ["tp-hcm"],
-      "region": "mien-nam",
-      "type": "bao-lo",
-      "numbers": ["397", "839"],
-      "money": 1000,
-      "note": "VẪN dùng tp-hcm (không có mã đài mới)"
-    },
-    {
-      "station": ["tp-hcm"],
-      "region": "mien-nam",
-      "type": "7-lo",
-      "numbers": ["397", "839"],
-      "money": 3000,
-      "note": "VẪN dùng tp-hcm"
-    },
-    {
-      "station": ["tp-hcm"],
-      "region": "mien-nam",
-      "type": "xiu-chu",
-      "numbers": ["397", "839"],
       "money": 10000,
       "note": null
     }

@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { motion } from 'framer-motion';
 import { getTodayDate } from '../utils/xoso';
 
-export default function InputSection({ onAnalyze, onFetch, onReset, loading }) {
+export default function InputSection({ onAnalyze, onFetch, onReset, loading, hasData }) {
   const [message, setMessage] = useState('');
   const [date, setDate] = useState(getTodayDate());
 
@@ -15,10 +14,6 @@ export default function InputSection({ onAnalyze, onFetch, onReset, loading }) {
   };
 
   const handleFetch = () => {
-    if (!message.trim()) {
-      alert('Vui lòng nhập tin nhắn hoặc phân tích trước');
-      return;
-    }
     onFetch(date);
   };
 
@@ -29,12 +24,7 @@ export default function InputSection({ onAnalyze, onFetch, onReset, loading }) {
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-      className="card mb-6"
-    >
+    <div className="card mb-6">
       <h2 className="text-2xl font-bold text-gray-800 mb-4">
         🎰 Dò Vé Số
       </h2>
@@ -81,7 +71,7 @@ export default function InputSection({ onAnalyze, onFetch, onReset, loading }) {
 
           <button
             onClick={handleFetch}
-            disabled={loading || !message.trim()}
+            disabled={loading || (!message.trim() && !hasData)}
             className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? '⏳ Đang lấy...' : '📊 Dò kết quả'}
@@ -96,6 +86,6 @@ export default function InputSection({ onAnalyze, onFetch, onReset, loading }) {
           </button>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }
